@@ -1,0 +1,18 @@
+{
+    "editor.formatOnSave": true,
+    "files.associations": {
+        "if.h": "c",
+        "tapkit.h": "c",
+        "if_packet.h": "c",
+        "ether.h": "c",
+        "ioctl.h": "c",
+        "libnet.h": "c",
+        "inet.h": "c",
+        "common.h": "c",
+        "select.h": "c",
+        "cstdlib": "c",
+        "typeinfo": "c",
+        "unistd.h": "c",
+        "tpool.h": "c"
+    }
+}
