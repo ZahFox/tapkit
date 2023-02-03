@@ -78,6 +78,8 @@ int tail_tap(char* dev_name);
 
 int knock_tap(char* dev_name);
 
+int emulate_tap(char* dev_name, struct in_addr* ip);
+
 const int open_tap(char* dev_name);
 
 void print_tap_dev(const struct tap_dev* dev);

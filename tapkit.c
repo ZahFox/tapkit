@@ -3,68 +3,8 @@
 #include "tpool.h"
 #include "utils.h"
 
-void log_eth_frame(const uint8_t* frame, const int len) {
-  if (len < 0) {
-    fprintf(stderr, "read failed: %s\n", strerror(errno));
-    return;
-  }
-
-  const struct ethhdr* ethhdr = (struct ethhdr*)frame;
-  uint16_t ether_type = ntohs(ethhdr->h_proto);
-  switch (ether_type) {
-    case IPV4_ETHER_TYPE: {
-      fprintf(stdout, "IPv4 PACKET\n");
-      break;
-    }
-    case ARP_ETHER_TYPE: {
-      if (len != SIZE_ETHERNET + SIZE_ARP) {
-        fprintf(stderr, "invalid arp packet length: %d\n", len);
-        return;
-      }
-
-      const struct arp_fields* fields =
-          (struct arp_fields*)(frame + SIZE_ETHERNET);
-      uint16_t ptype = ntohs(fields->ptype);
-      if (ptype != IPV4_ETHER_TYPE) {
-        fprintf(stderr, "unsupported arp protocol type: 0x%.04x\n", ptype);
-        return;
-      }
-
-      fprintf(stdout,
-              "========================================\n"
-              "ARP %s\n"
-              "========================================\n",
-              ntohs(fields->oper) == 1 ? "Request" : "Reply");
-      fprintf(stdout,
-              "To:    %02x:%02x:%02x:%02x:%02x:%02x\n"
-              "From:  %02x:%02x:%02x:%02x:%02x:%02x\n",
-              ethhdr->h_dest[0], ethhdr->h_dest[1], ethhdr->h_dest[2],
-              ethhdr->h_dest[3], ethhdr->h_dest[4], ethhdr->h_dest[5],
-              ethhdr->h_source[0], ethhdr->h_source[1], ethhdr->h_source[2],
-              ethhdr->h_source[3], ethhdr->h_source[4], ethhdr->h_source[5]);
-
-      fprintf(stdout,
-              "MAC:\n"
-              "  Sender:    %02x:%02x:%02x:%02x:%02x:%02x\n"
-              "  Target:    %02x:%02x:%02x:%02x:%02x:%02x\n",
-              fields->sha[0], fields->sha[1], fields->sha[2], fields->sha[3],
-              fields->sha[4], fields->sha[5], fields->tha[0], fields->tha[1],
-              fields->tha[2], fields->tha[3], fields->tha[4], fields->tha[5]);
-
-      fprintf(stdout,
-              "IP:\n"
-              "  Sender:    %u.%u.%u.%u\n"
-              "  Target:    %u.%u.%u.%u\n",
-              fields->spa[0], fields->spa[1], fields->spa[2], fields->spa[3],
-              fields->tpa[0], fields->tpa[1], fields->tpa[2], fields->tpa[3]);
-      fputs("----------------------------------------\n", stdout);
-      break;
-    }
-    default: {
-      break;
-    }
-  }
-}
+void tail_tap_handler(void* arg);
+void log_eth_frame(const uint8_t* frame, const int len);
 
 int knock_tap(char* dev_name) {
   in_addr_t source_ip;  /* claimed ip address */
@@ -160,6 +100,48 @@ cleanup:
   return r;
 }
 
+int tail_tap(char* dev_name) {
+  struct tap_dev dev = {
+      .is_up = false, .dev_name = dev_name, .mac_addr = {0, 0, 0, 0, 0, 0}};
+
+  if (get_tap_info(&dev) == -1) {
+    fprintf(stderr, "could not find network device: %s\n", dev_name);
+    return -1;
+  }
+
+  struct tap_tail_opts opts = {
+      .dev = &dev,
+      .func = log_eth_frame,
+  };
+
+  struct tpool* tm = tpool_create(1);
+  tpool_add_work(tm, tail_tap_handler, &opts);
+  tpool_wait(tm);
+  tpool_destroy(tm);
+  return 0;
+}
+
+int emulate_tap(char* dev_name, struct in_addr* ip) {
+  struct tap_dev dev = {
+      .is_up = false, .dev_name = dev_name, .mac_addr = {0, 0, 0, 0, 0, 0}};
+
+  if (get_tap_info(&dev) == -1) {
+    fprintf(stderr, "could not find network device: %s\n", dev_name);
+    return -1;
+  }
+
+  struct tap_tail_opts opts = {
+      .dev = &dev,
+      .func = log_eth_frame,
+  };
+
+  struct tpool* tm = tpool_create(1);
+  tpool_add_work(tm, tail_tap_handler, &opts);
+  tpool_wait(tm);
+  tpool_destroy(tm);
+  return 0;
+}
+
 void tail_tap_handler(void* arg) {
   uint8_t frame[1542];
   fd_set rfds;
@@ -190,86 +172,12 @@ void tail_tap_handler(void* arg) {
       continue;
     }
 
-    const struct ethhdr* ethhdr = (struct ethhdr*)frame;
-    uint16_t ether_type = ntohs(ethhdr->h_proto);
-    switch (ether_type) {
-      case IPV4_ETHER_TYPE: {
-        fprintf(stdout, "IPv4 PACKET\n");
-        break;
-      }
-      case ARP_ETHER_TYPE: {
-        if (len != SIZE_ETHERNET + SIZE_ARP) {
-          fprintf(stderr, "invalid arp packet length: %d\n", len);
-          continue;
-        }
-
-        const struct arp_fields* fields =
-            (struct arp_fields*)(frame + SIZE_ETHERNET);
-        uint16_t ptype = ntohs(fields->ptype);
-        if (ptype != IPV4_ETHER_TYPE) {
-          fprintf(stderr, "unsupported arp protocol type: 0x%.04x\n", ptype);
-          continue;
-        }
-
-        fprintf(stdout,
-                "========================================\n"
-                "ARP %s\n"
-                "========================================\n",
-                ntohs(fields->oper) == 1 ? "Request" : "Reply");
-        fprintf(stdout,
-                "To:    %02x:%02x:%02x:%02x:%02x:%02x\n"
-                "From:  %02x:%02x:%02x:%02x:%02x:%02x\n",
-                ethhdr->h_dest[0], ethhdr->h_dest[1], ethhdr->h_dest[2],
-                ethhdr->h_dest[3], ethhdr->h_dest[4], ethhdr->h_dest[5],
-                ethhdr->h_source[0], ethhdr->h_source[1], ethhdr->h_source[2],
-                ethhdr->h_source[3], ethhdr->h_source[4], ethhdr->h_source[5]);
-
-        fprintf(stdout,
-                "MAC:\n"
-                "  Sender:    %02x:%02x:%02x:%02x:%02x:%02x\n"
-                "  Target:    %02x:%02x:%02x:%02x:%02x:%02x\n",
-                fields->sha[0], fields->sha[1], fields->sha[2], fields->sha[3],
-                fields->sha[4], fields->sha[5], fields->tha[0], fields->tha[1],
-                fields->tha[2], fields->tha[3], fields->tha[4], fields->tha[5]);
-
-        fprintf(stdout,
-                "IP:\n"
-                "  Sender:    %u.%u.%u.%u\n"
-                "  Target:    %u.%u.%u.%u\n",
-                fields->spa[0], fields->spa[1], fields->spa[2], fields->spa[3],
-                fields->tpa[0], fields->tpa[1], fields->tpa[2], fields->tpa[3]);
-        fputs("----------------------------------------\n", stdout);
-        break;
-      }
-      default: {
-        break;
-      }
-    }
+    opts->func(frame, len);
   }
 cleanup:
   if (tap_fd != -1) {
     close(tap_fd);
   }
-}
-
-int tail_tap(char* dev_name) {
-  struct tap_dev dev = {
-      .is_up = false, .dev_name = dev_name, .mac_addr = {0, 0, 0, 0, 0, 0}};
-
-  if (get_tap_info(&dev) == -1) {
-    fprintf(stderr, "could not find network device: %s\n", dev_name);
-    return -1;
-  }
-
-  struct tap_tail_opts opts = {
-      .dev = &dev,
-      .func = log_eth_frame,
-  };
-
-  struct tpool* tm = tpool_create(1);
-  tpool_add_work(tm, tail_tap_handler, &opts);
-  tpool_wait(tm);
-  tpool_destroy(tm);
 }
 
 const int open_tap(char* dev_name) {
@@ -341,4 +249,67 @@ void print_tap_dev(const struct tap_dev* dev) {
           dev->mac_addr[1], dev->mac_addr[2], dev->mac_addr[3],
           dev->mac_addr[4], dev->mac_addr[5]);
   fputs("----------------------------------------\n", stdout);
+}
+
+void log_eth_frame(const uint8_t* frame, const int len) {
+  if (len < 0) {
+    fprintf(stderr, "read failed: %s\n", strerror(errno));
+    return;
+  }
+
+  const struct ethhdr* ethhdr = (struct ethhdr*)frame;
+  uint16_t ether_type = ntohs(ethhdr->h_proto);
+  switch (ether_type) {
+    case IPV4_ETHER_TYPE: {
+      fprintf(stdout, "IPv4 PACKET\n");
+      break;
+    }
+    case ARP_ETHER_TYPE: {
+      if (len != SIZE_ETHERNET + SIZE_ARP) {
+        fprintf(stderr, "invalid arp packet length: %d\n", len);
+        return;
+      }
+
+      const struct arp_fields* fields =
+          (struct arp_fields*)(frame + SIZE_ETHERNET);
+      uint16_t ptype = ntohs(fields->ptype);
+      if (ptype != IPV4_ETHER_TYPE) {
+        fprintf(stderr, "unsupported arp protocol type: 0x%.04x\n", ptype);
+        return;
+      }
+
+      fprintf(stdout,
+              "========================================\n"
+              "ARP %s\n"
+              "========================================\n",
+              ntohs(fields->oper) == 1 ? "Request" : "Reply");
+      fprintf(stdout,
+              "To:    %02x:%02x:%02x:%02x:%02x:%02x\n"
+              "From:  %02x:%02x:%02x:%02x:%02x:%02x\n",
+              ethhdr->h_dest[0], ethhdr->h_dest[1], ethhdr->h_dest[2],
+              ethhdr->h_dest[3], ethhdr->h_dest[4], ethhdr->h_dest[5],
+              ethhdr->h_source[0], ethhdr->h_source[1], ethhdr->h_source[2],
+              ethhdr->h_source[3], ethhdr->h_source[4], ethhdr->h_source[5]);
+
+      fprintf(stdout,
+              "MAC:\n"
+              "  Sender:    %02x:%02x:%02x:%02x:%02x:%02x\n"
+              "  Target:    %02x:%02x:%02x:%02x:%02x:%02x\n",
+              fields->sha[0], fields->sha[1], fields->sha[2], fields->sha[3],
+              fields->sha[4], fields->sha[5], fields->tha[0], fields->tha[1],
+              fields->tha[2], fields->tha[3], fields->tha[4], fields->tha[5]);
+
+      fprintf(stdout,
+              "IP:\n"
+              "  Sender:    %u.%u.%u.%u\n"
+              "  Target:    %u.%u.%u.%u\n",
+              fields->spa[0], fields->spa[1], fields->spa[2], fields->spa[3],
+              fields->tpa[0], fields->tpa[1], fields->tpa[2], fields->tpa[3]);
+      fputs("----------------------------------------\n", stdout);
+      break;
+    }
+    default: {
+      break;
+    }
+  }
 }

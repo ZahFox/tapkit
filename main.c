@@ -1,18 +1,5 @@
 #include "cunittests.h"
 #include "tapkit.h"
-#include "tpool.h"
-
-void worker(void* arg) {
-  int* val = (int*)arg;
-  int old = *val;
-  *val += 1000;
-  printf("tid=%lu, old=%d, val=%d\n", pthread_self(), old, *val);
-  if (*val % 2) {
-    usleep(100000);
-  }
-}
-
-void emulate(char* dev, struct in_addr* ip) { return; }
 
 #ifndef TESTING
 int main(int argc, char* argv[]) {
@@ -54,7 +41,7 @@ int main(int argc, char* argv[]) {
       return EXIT_FAILURE;
     }
 
-    emulate(dev, &ip);
+    emulate_tap(dev, &ip);
     return EXIT_SUCCESS;
   } else {
     fprintf(stderr, "error: invalid tapkit command: %s\n", cmd);
