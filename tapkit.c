@@ -206,6 +206,7 @@ const int get_tap_info(struct tap_dev* dev) {
   char p_errbuf[PCAP_ERRBUF_SIZE];
   pcap_if_t *interfaces, *interface;
   int result = 0;
+  bool is_up;
 
   if (pcap_findalldevs(&interfaces, p_errbuf) == PCAP_ERROR) {
     fprintf(stderr, "failed to find network devices: %s\n", p_errbuf);
@@ -221,7 +222,7 @@ const int get_tap_info(struct tap_dev* dev) {
   goto cleanup;
 
 getinfo:
-  bool is_up = (interface->flags & PCAP_IF_UP) == PCAP_IF_UP;
+  is_up = (interface->flags & PCAP_IF_UP) == PCAP_IF_UP;
   dev->is_up = is_up;
   struct pcap_addr* address = NULL;
   for (address = interface->addresses; address != NULL;
