@@ -3,13 +3,15 @@
 #include "tpool.h"
 #include "utils.h"
 
+#define TUN_DEV_PATH "/dev/net/tun"
+
 void tail_tap_handler(void* arg);
 void log_eth_frame(const uint8_t* frame, const int len);
 
 int knock_tap(char* dev_name) {
   in_addr_t source_ip;  /* claimed ip address */
   in_addr_t target_ip;  /* destination ip address */
-  u_int8_t* target_mac; /* destination mac address */
+  uint8_t* target_mac; /* destination mac address */
   libnet_t* ctx = NULL; /* libnet context */
   pcap_t* handle = NULL;
   libnet_ptag_t arp = 0, eth = 0;       /* libnet protocol blocks */
@@ -38,10 +40,10 @@ int knock_tap(char* dev_name) {
   source_mac = libnet_get_hwaddr(ctx);
   /* build the ARP header */
   arp = libnet_autobuild_arp(ARPOP_REPLY,           /* operation */
-                             (u_int8_t*)source_mac, /* source hardware addr */
-                             (u_int8_t*)&source_ip, /* source protocol addr */
+                             (uint8_t*)source_mac, /* source hardware addr */
+                             (uint8_t*)&source_ip, /* source protocol addr */
                              target_mac,            /* target hardware addr */
-                             (u_int8_t*)&target_ip, /* target protocol addr */
+                             (uint8_t*)&target_ip, /* target protocol addr */
                              ctx);                  /* libnet context */
 
   if (arp == -1) {
@@ -52,7 +54,7 @@ int knock_tap(char* dev_name) {
 
   /* build the ethernet header */
   eth = libnet_build_ethernet(target_mac,            /* destination address */
-                              (u_int8_t*)source_mac, /* source address */
+                              (uint8_t*)source_mac, /* source address */
                               ETHERTYPE_ARP, /* type of encasulated packet */
                               NULL,          /* pointer to payload */
                               0,             /* size of payload */
@@ -81,7 +83,7 @@ int knock_tap(char* dev_name) {
     goto cleanup;
   }
 
-  if (pcap_sendpacket(handle, (u_char*)packet, packet_size) == PCAP_ERROR) {
+  if (pcap_sendpacket(handle, (uint8_t*)packet, packet_size) == PCAP_ERROR) {
     fprintf(stderr, "failed to send packet: %s\n", p_errbuf);
     r = -1;
     goto cleanup;
@@ -181,9 +183,9 @@ cleanup:
 }
 
 const int open_tap(char* dev_name) {
-  const int tap_fd = open("/dev/net/tun", O_RDWR);
+  const int tap_fd = open(TUN_DEV_PATH, O_RDWR);
   if (tap_fd == -1) {
-    fprintf(stderr, "failed to open: /dev/net/tun: %s\n", strerror(errno));
+    fprintf(stderr, "failed to open: "TUN_DEV_PATH" %s\n", strerror(errno));
     return -1;
   }
 
@@ -230,8 +232,8 @@ getinfo:
     if (address->addr->sa_family == AF_PACKET &&
         address->addr->sa_data != NULL) {
       // FIND out the correct type to cast this to
-      u_char* addr = (u_char*)address->addr->sa_data;
-      memcpy(dev->mac_addr, (addr + 10), sizeof(u_char) * 6);
+      uint8_t* addr = (uint8_t*)address->addr->sa_data;
+      memcpy(dev->mac_addr, (addr + 10), sizeof(uint8_t) * 6);
       break;
     }
   }

@@ -17,8 +17,8 @@
 
 /* Ethernet header */
 struct ethernet_hdrs {
-  u_char ether_dhost[ETHER_ADDR_LEN]; /* Destination host address */
-  u_char ether_shost[ETHER_ADDR_LEN]; /* Source host address */
+  uint8_t ether_dhost[ETHER_ADDR_LEN]; /* Destination host address */
+  uint8_t ether_shost[ETHER_ADDR_LEN]; /* Source host address */
   u_short ether_type;                 /* IP? ARP? RARP? etc */
 };
 
@@ -68,8 +68,8 @@ error_exit:
   return ret;
 }
 
-void got_icmp_packet(u_char* args, const struct pcap_pkthdr* header,
-                     const u_char* packet) {
+void got_icmp_packet(uint8_t* args, const struct pcap_pkthdr* header,
+                     const uint8_t* packet) {
   const struct ethernet_hdrs* ethernet; /* The Ethernet header */
   const struct sniff_ip* ip;            /* The IP header */
   const struct sniff_icmp* icmp;        /* The ICMP header */
@@ -85,21 +85,21 @@ void got_icmp_packet(u_char* args, const struct pcap_pkthdr* header,
   }
 
   icmp = (struct sniff_icmp*)(packet + SIZE_ETHERNET + size_ip);
-  payload = (u_char*)(packet + SIZE_ETHERNET + size_ip + SIZE_ICMP);
+  payload = (uint8_t*)(packet + SIZE_ETHERNET + size_ip + SIZE_ICMP);
 
   if (icmp->icmp_type == 8) { /* Echo Request */
     struct icmp_echo_header* echo_hdrs;
     echo_hdrs = (struct icmp_echo_header*)&icmp->icmp_rest_of_header;
-    u_char ident = TO_LITTLE_ENDIAN_16(echo_hdrs->icmp_identifier);
-    u_char seq_num = TO_LITTLE_ENDIAN_16(echo_hdrs->icmp_seq_num);
+    uint8_t ident = TO_LITTLE_ENDIAN_16(echo_hdrs->icmp_identifier);
+    uint8_t seq_num = TO_LITTLE_ENDIAN_16(echo_hdrs->icmp_seq_num);
     fputs("echo request, ", stdout);
     fprintf(stdout, "id %hu, seq %hu\n", ident, seq_num);
 
   } else if (icmp->icmp_type == 0) { /* Echo Reply */
     struct icmp_echo_header* echo_hdrs;
     echo_hdrs = (struct icmp_echo_header*)&icmp->icmp_rest_of_header;
-    u_char ident = TO_LITTLE_ENDIAN_16(echo_hdrs->icmp_identifier);
-    u_char seq_num = TO_LITTLE_ENDIAN_16(echo_hdrs->icmp_seq_num);
+    uint8_t ident = TO_LITTLE_ENDIAN_16(echo_hdrs->icmp_identifier);
+    uint8_t seq_num = TO_LITTLE_ENDIAN_16(echo_hdrs->icmp_seq_num);
     fputs("echo reply, ", stdout);
     fprintf(stdout, "id %hu, seq %hu\n", ident, seq_num);
   }
@@ -112,7 +112,7 @@ int tail_icmp(char* dev_name) {
 
   pcap_t* handle;
   struct pcap_pkthdr header;
-  const u_char* packet;
+  const uint8_t* packet;
   char errbuf[PCAP_ERRBUF_SIZE];
   char filter_exp[] = "icmp"; /* The filter expression */
   struct bpf_program fp;      /* The compiled filter */
@@ -166,7 +166,7 @@ void emulate(void) {
 
   tpool_wait(tm);
 
-  u_int64_t sum = 0;
+  uint64_t sum = 0;
   for (i = 0; i < 100; i++) {
     sum += vals[i];
   }
