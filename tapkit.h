@@ -3,15 +3,11 @@
 
 #include "common.h"
 
-struct tap_dev {
-  char* dev_name;
-  bool is_up;
-  uint8_t mac_addr[6];
-};
+#define TUN_DEV_PATH "/dev/net/tun"
 
 struct tap_emulate_state {
   const struct tap_dev* dev;
-  struct in_addr* ip;
+  const uint8_t ip_addr[4];
 };
 
 typedef void (*tap_tail_func_t)(const uint8_t* frame, const int len);

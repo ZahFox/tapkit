@@ -1,113 +1,36 @@
 #include "tapkit.h"
 
+#include "ds.h"
 #include "tpool.h"
 #include "utils.h"
 
-#define TUN_DEV_PATH "/dev/net/tun"
+NEW_CIRC_BUFFER(struct arp_entry, arp_buf, 256);
 
 void tail_tap_handler(void* arg);
-void log_eth_frame(const uint8_t* frame, const int len);
+void print_eth_frame(const uint8_t* frame, const int len);
 
 void emulate_tap_handler(void* arg);
 void process_eth_frame(const struct tap_emulate_state* state, const uint8_t* frame, const int len);
+int send_arp_reply(const char* dev_name, const uint8_t* target_mac, uint8_t* target_ip, const uint8_t* sender_mac, const uint8_t* sender_ip);
 
 int knock_tap(char* dev_name) {
-  in_addr_t source_ip;  /* claimed ip address */
-  in_addr_t target_ip;  /* destination ip address */
-  uint8_t* target_mac; /* destination mac address */
-  libnet_t* ctx = NULL; /* libnet context */
-  pcap_t* handle = NULL;
-  libnet_ptag_t arp = 0, eth = 0;       /* libnet protocol blocks */
-  struct libnet_ether_addr* source_mac; /* ethernet MAC address */
-  char n_errbuf[LIBNET_ERRBUF_SIZE];    /* error messages */
-  char p_errbuf[PCAP_ERRBUF_SIZE];      /* error messages */
-  int r = EXIT_SUCCESS;                 /* generic return value */
-  int maclen;
-
-  source_ip = inet_addr("192.168.42.33");
-  target_ip = inet_addr("192.168.42.1");
-  if ((target_mac = libnet_hex_aton("76:54:5b:0d:40:49", &maclen)) == NULL) {
-    fprintf(stderr, "mac address error");
-    goto cleanup;
-  }
-
-  /* open handle */
-  ctx = libnet_init(LIBNET_LINK_ADV, dev_name, n_errbuf);
-
-  if (ctx == NULL) {
-    fprintf(stderr, "error: %s", n_errbuf);
-    r = -1;
-    goto cleanup;
-  }
-
-  source_mac = libnet_get_hwaddr(ctx);
-  /* build the ARP header */
-  arp = libnet_autobuild_arp(ARPOP_REPLY,           /* operation */
-                             (uint8_t*)source_mac, /* source hardware addr */
-                             (uint8_t*)&source_ip, /* source protocol addr */
-                             target_mac,            /* target hardware addr */
-                             (uint8_t*)&target_ip, /* target protocol addr */
-                             ctx);                  /* libnet context */
-
-  if (arp == -1) {
-    fprintf(stderr, "unable to build ARP header: %s\n", libnet_geterror(ctx));
-    r = -1;
-    goto cleanup;
-  }
-
-  /* build the ethernet header */
-  eth = libnet_build_ethernet(target_mac,            /* destination address */
-                              (uint8_t*)source_mac, /* source address */
-                              ETHERTYPE_ARP, /* type of encasulated packet */
-                              NULL,          /* pointer to payload */
-                              0,             /* size of payload */
-                              ctx,           /* libnet context */
-                              0);            /* libnet protocol tag */
-
-  if (eth == -1) {
-    fprintf(stderr, "unable to build ethernet header: %s\n",
-            libnet_geterror(ctx));
-    r = -1;
-    goto cleanup;
-  }
-
-  uint8_t* packet = NULL;
-  uint32_t packet_size = 0;
-  if (libnet_adv_cull_packet(ctx, &packet, &packet_size) == -1) {
-    fprintf(stderr, "unable to read packet: %s\n", libnet_geterror(ctx));
-    r = -1;
-    goto cleanup;
-  }
-
-  handle = pcap_open_live(dev_name, BUFSIZ, 1, 1000, p_errbuf);
-  if (handle == NULL) {
-    fprintf(stderr, "could not open device %s: %s\n", dev_name, p_errbuf);
-    r = -1;
-    goto cleanup;
-  }
-
-  if (pcap_sendpacket(handle, (uint8_t*)packet, packet_size) == PCAP_ERROR) {
-    fprintf(stderr, "failed to send packet: %s\n", p_errbuf);
-    r = -1;
-    goto cleanup;
-  }
-
-cleanup:
-  if (ctx != NULL) {
-    if (packet != NULL) {
-      libnet_adv_free_packet(ctx, packet);
-    }
-    libnet_destroy(ctx);
-  }
-  if (handle != NULL) {
-    pcap_close(handle);
-  }
-  return r;
+  const uint8_t target_mac[6] = {0x76, 0x54, 0x5b, 0x0d, 0x40, 0x49};
+  uint8_t target_ip[6] = {192, 168, 42, 1};
+  const uint8_t sender_mac[6] = {0x42, 0x42, 0x42, 0x42, 0x42, 0x42};
+  const uint8_t sender_ip[4] = {192, 168, 42, 33};
+  return send_arp_reply(
+    dev_name,
+    target_mac,
+    target_ip,
+    sender_mac,
+    sender_ip
+  );
 }
 
 int tail_tap(char* dev_name) {
   struct tap_dev dev = {
-      .is_up = false, .dev_name = dev_name, .mac_addr = {0, 0, 0, 0, 0, 0}};
+      .is_up = false, .dev_name = dev_name, .mac_addr = {0, 0, 0, 0, 0, 0}
+  };
 
   if (get_tap_info(&dev) == -1) {
     fprintf(stderr, "could not find network device: %s\n", dev_name);
@@ -116,7 +39,7 @@ int tail_tap(char* dev_name) {
 
   struct tap_tail_opts opts = {
       .dev = &dev,
-      .func = log_eth_frame,
+      .func = print_eth_frame,
   };
 
   struct tpool* tm = tpool_create(1);
@@ -161,9 +84,17 @@ void emulate_tap_handler(void* arg) {
     goto cleanup;
   }
 
+  // convert ip type to uint8_t array
+  uint8_t o1, o2, o3, o4;
+  uint32_t emu_addr = (uint32_t)opts->ip->s_addr;
+  o1 = emu_addr & 0x000000ff;
+  o2 = (emu_addr & 0x0000ff00) >> 8;
+  o3 = (emu_addr & 0x00ff0000) >> 16;
+  o4 = (emu_addr & 0xff000000) >> 24;
+
   const struct tap_emulate_state state = {
       .dev = opts->dev,
-      .ip = opts->ip,
+      .ip_addr = {o1, o2, o3, o4},
   };
 
   // read ethernet frames from tap device
@@ -174,7 +105,7 @@ void emulate_tap_handler(void* arg) {
     tv.tv_usec = 0;
     int res = select(tap_fd + 1, &rfds, NULL, NULL, &tv);
     if (res < 0) {
-      fprintf(stderr, "select fails: %s\n", strerror(errno));
+      fprintf(stderr, "select failed: %s\n", strerror(errno));
       goto cleanup;
     }
 
@@ -212,7 +143,7 @@ void tail_tap_handler(void* arg) {
     tv.tv_usec = 0;
     int res = select(tap_fd + 1, &rfds, NULL, NULL, &tv);
     if (res < 0) {
-      fprintf(stderr, "select fails: %s\n", strerror(errno));
+      fprintf(stderr, "select failed: %s\n", strerror(errno));
       goto cleanup;
     }
 
@@ -291,18 +222,7 @@ cleanup:
   return result;
 }
 
-void print_tap_dev(const struct tap_dev* dev) {
-  fputs("========================================\n", stdout);
-  fprintf(stdout, "%s\n", dev->dev_name);
-  fputs("========================================\n", stdout);
-  fprintf(stdout, "Up: %s\n", dev->is_up ? "True" : "False");
-  fprintf(stdout, "MAC: %02x:%02x:%02x:%02x:%02x:%02x\n", dev->mac_addr[0],
-          dev->mac_addr[1], dev->mac_addr[2], dev->mac_addr[3],
-          dev->mac_addr[4], dev->mac_addr[5]);
-  fputs("----------------------------------------\n", stdout);
-}
-
-void log_eth_frame(const uint8_t* frame, const int len) {
+void print_eth_frame(const uint8_t* frame, const int len) {
   if (len < 0) {
     fprintf(stderr, "read failed: %s\n", strerror(errno));
     return;
@@ -329,40 +249,107 @@ void log_eth_frame(const uint8_t* frame, const int len) {
         return;
       }
 
-      fprintf(stdout,
-              "========================================\n"
-              "ARP %s\n"
-              "========================================\n",
-              ntohs(fields->oper) == 1 ? "Request" : "Reply");
-      fprintf(stdout,
-              "To:    %02x:%02x:%02x:%02x:%02x:%02x\n"
-              "From:  %02x:%02x:%02x:%02x:%02x:%02x\n",
-              ethhdr->h_dest[0], ethhdr->h_dest[1], ethhdr->h_dest[2],
-              ethhdr->h_dest[3], ethhdr->h_dest[4], ethhdr->h_dest[5],
-              ethhdr->h_source[0], ethhdr->h_source[1], ethhdr->h_source[2],
-              ethhdr->h_source[3], ethhdr->h_source[4], ethhdr->h_source[5]);
-
-      fprintf(stdout,
-              "MAC:\n"
-              "  Sender:    %02x:%02x:%02x:%02x:%02x:%02x\n"
-              "  Target:    %02x:%02x:%02x:%02x:%02x:%02x\n",
-              fields->sha[0], fields->sha[1], fields->sha[2], fields->sha[3],
-              fields->sha[4], fields->sha[5], fields->tha[0], fields->tha[1],
-              fields->tha[2], fields->tha[3], fields->tha[4], fields->tha[5]);
-
-      fprintf(stdout,
-              "IP:\n"
-              "  Sender:    %u.%u.%u.%u\n"
-              "  Target:    %u.%u.%u.%u\n",
-              fields->spa[0], fields->spa[1], fields->spa[2], fields->spa[3],
-              fields->tpa[0], fields->tpa[1], fields->tpa[2], fields->tpa[3]);
-      fputs("----------------------------------------\n", stdout);
+      print_arp_packet(ethhdr, fields);
       break;
     }
     default: {
       break;
     }
   }
+}
+
+/**
+ * Send an ARP reply using a particular network device.
+ *
+ * An ARP reply is used to forward the MAC address of a target host that was
+ * requested by a sender host.
+ *
+ * const char*    dev_name   - The name of the network device that will send the reply.
+ * const uint8_t* target_mac - The MAC address of host that originated ARP request.
+ * uint8_t* target_ip  - The IP address of host that originated ARP request.
+ * const uint8_t* sender_mac - The MAC address of host that was requested.
+ * const uint8_t* sender_ip  - The IP address of host that was requested.
+ */
+int send_arp_reply(
+  const char* dev_name,
+  const uint8_t* target_mac, uint8_t* target_ip,
+  const uint8_t* sender_mac, const uint8_t* sender_ip
+) {
+  libnet_t* ctx = NULL;                 /* libnet context */
+  pcap_t* handle = NULL;                /* libnet handle  */
+  libnet_ptag_t arp = 0, eth = 0;       /* libnet protocol blocks */
+  struct libnet_ether_addr* source_mac; /* MAC address for sending device */
+  char n_errbuf[LIBNET_ERRBUF_SIZE];    /* error messages */
+  char p_errbuf[PCAP_ERRBUF_SIZE];      /* error messages */
+  int r = 0;                            /* generic return value */
+  int maclen;
+
+  /* Open libnet handle */
+  ctx = libnet_init(LIBNET_LINK_ADV, dev_name, n_errbuf);
+  if (ctx == NULL) {
+    fprintf(stderr, "error: %s", n_errbuf);
+    r = -1;
+    goto cleanup;
+  }
+
+  // // Put the IP addresses in network byte order
+  // uint8_t n_sender_ip[4] = {sender_ip[3], sender_ip[2], sender_ip[1], sender_ip[0]};
+  // uint8_t n_target_ip[4] = {target_ip[3], target_ip[2], target_ip[1], target_ip[0]};
+
+  /* Build the ARP header */
+  arp = libnet_autobuild_arp(ARPOP_REPLY, sender_mac, sender_ip, target_mac, target_ip, ctx);
+  if (arp == -1) {
+    fprintf(stderr, "unable to build ARP header: %s\n", libnet_geterror(ctx));
+    r = -1;
+    goto cleanup;
+  }
+
+  source_mac = libnet_get_hwaddr(ctx);
+
+  /* Build the Ethernet header */
+  eth = libnet_build_ethernet(target_mac, source_mac->ether_addr_octet, ETHERTYPE_ARP, NULL, 0, ctx, 0);
+  if (eth == -1) {
+    fprintf(stderr, "unable to build ethernet header: %s\n",
+            libnet_geterror(ctx));
+    r = -1;
+    goto cleanup;
+  }
+
+  /* Generate the network packet */
+  uint8_t* packet = NULL;
+  uint32_t packet_size = 0;
+  if (libnet_adv_cull_packet(ctx, &packet, &packet_size) == -1) {
+    fprintf(stderr, "unable to read packet: %s\n", libnet_geterror(ctx));
+    r = -1;
+    goto cleanup;
+  }
+
+  /* Open the network device that will send the packet */
+  handle = pcap_open_live(dev_name, BUFSIZ, 1, 1000, p_errbuf);
+  if (handle == NULL) {
+    fprintf(stderr, "could not open device %s: %s\n", dev_name, p_errbuf);
+    r = -1;
+    goto cleanup;
+  }
+
+  /* Send the packet using the network device */
+  if (pcap_sendpacket(handle, (uint8_t*)packet, packet_size) == PCAP_ERROR) {
+    fprintf(stderr, "failed to send packet: %s\n", p_errbuf);
+    r = -1;
+    goto cleanup;
+  }
+
+cleanup:
+  if (ctx != NULL) {
+    if (packet != NULL) {
+      libnet_adv_free_packet(ctx, packet);
+    }
+    libnet_destroy(ctx);
+  }
+  if (handle != NULL) {
+    pcap_close(handle);
+  }
+  return r;
 }
 
 void process_eth_frame(const struct tap_emulate_state* state, const uint8_t* frame, const int len)
@@ -395,74 +382,41 @@ void process_eth_frame(const struct tap_emulate_state* state, const uint8_t* fra
       }
 
       bool is_request = ntohs(fields->oper) == 1;
-      if (is_request) { // ARP REQUEST
-        // Target: The host that has the requested IP
-        // TPA -> IP address we are trying to find HW address of
-        // THA -> Ignored (this is what we want to find out)
-        // Sender: The host that requested the HW address for IP
-        // SPA -> IP address of the host that originated ARP req
-        // SHA -> HW address of the host that originated ARP req
-      } else { // ARP REPLY
-        // Target: The host that requested the HW address for IP
-        // TPA -> HW address of host that originated ARP req
-        // THA -> HW address of host that originated ARP req
-        // Sender: The host that has the requested IP
-        // SPA -> The IP address of the host we wanted to find
-        // SHA -> The HW address of the host we wanted to find
-
-        // Ensure that the target MAC address matches our MAC address
-        if (
-          (fields->tha[0] != state->dev->mac_addr[0]) || (fields->tha[1] != state->dev->mac_addr[1]) ||
-          (fields->tha[2] != state->dev->mac_addr[2]) || (fields->tha[3] != state->dev->mac_addr[3]) ||
-          (fields->tha[4] != state->dev->mac_addr[4]) || (fields->tha[5] != state->dev->mac_addr[5])
-        ) {
-              return;
+      if (is_request) { // ARP Request
+        // Ensure the target IP address is our IP address
+        if (!ip_addrs_eq(fields->tpa, state->ip_addr)) {
+            return;
         }
 
-        uint8_t o1, o2, o3, o4;
-        uint32_t emu_addr = (uint32_t)state->ip->s_addr;
-        o1 = emu_addr & 0x000000ff;
-        o2 = (emu_addr & 0x0000ff00) >> 8;
-        o3 = (emu_addr & 0x00ff0000) >> 16;
-        o4 = (emu_addr & 0xff000000) >> 24;
+        send_arp_reply(
+          state->dev->dev_name,
+          fields->sha,
+          fields->spa,
+          state->dev->mac_addr,
+          fields->tpa
+        );
+      } else { // ARP Reply
+        // Ensure that the target MAC address is our MAC address
+        if (!mac_addrs_eq(fields->tha, state->dev->mac_addr)) {
+            return;
+        }
 
-        // Ensure the target IP address matches our IP address
-        if (
-          (fields->tpa[0] != o1) || (fields->tpa[1] != o2) ||
-          (fields->tpa[2] != o3)  || (fields->tpa[3] != o4)
-        ) {
-          return;
+        // Ensure the target IP address is our IP address
+        if (!ip_addrs_eq(fields->tpa, state->ip_addr)) {
+            return;
         }
       }
 
-      fprintf(stdout,
-              "========================================\n"
-              "ARP %s\n"
-              "========================================\n",
-              ntohs(fields->oper) == 1 ? "Request" : "Reply");
-      fprintf(stdout,
-              "To:    %02x:%02x:%02x:%02x:%02x:%02x\n"
-              "From:  %02x:%02x:%02x:%02x:%02x:%02x\n",
-              ethhdr->h_dest[0], ethhdr->h_dest[1], ethhdr->h_dest[2],
-              ethhdr->h_dest[3], ethhdr->h_dest[4], ethhdr->h_dest[5],
-              ethhdr->h_source[0], ethhdr->h_source[1], ethhdr->h_source[2],
-              ethhdr->h_source[3], ethhdr->h_source[4], ethhdr->h_source[5]);
+      // Create an entry that assoicates an IP addr with a MAC addr
+      struct arp_entry new_entry = {
+        .ip_addr={fields->spa[0],fields->spa[1],fields->spa[2],fields->spa[3]},
+        .mac_addr={fields->sha[0],fields->sha[1],fields->sha[2],fields->sha[3],fields->sha[4],fields->sha[5]},
+      };
 
-      fprintf(stdout,
-              "MAC:\n"
-              "  Sender:    %02x:%02x:%02x:%02x:%02x:%02x\n"
-              "  Target:    %02x:%02x:%02x:%02x:%02x:%02x\n",
-              fields->sha[0], fields->sha[1], fields->sha[2], fields->sha[3],
-              fields->sha[4], fields->sha[5], fields->tha[0], fields->tha[1],
-              fields->tha[2], fields->tha[3], fields->tha[4], fields->tha[5]);
+      // TODO: Make this a hash map instead...
+      CIRC_BUFFER_PUSH(arp_buf, &new_entry);
 
-      fprintf(stdout,
-              "IP:\n"
-              "  Sender:    %u.%u.%u.%u\n"
-              "  Target:    %u.%u.%u.%u\n",
-              fields->spa[0], fields->spa[1], fields->spa[2], fields->spa[3],
-              fields->tpa[0], fields->tpa[1], fields->tpa[2], fields->tpa[3]);
-      fputs("----------------------------------------\n", stdout);
+      print_arp_packet(ethhdr, fields);
       break;
     }
     default: {

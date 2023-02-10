@@ -3,12 +3,13 @@
 
 #include "common.h"
 
-int arp_sender_mac_str(struct arp_fields* fields, char* str);
+void print_arp_packet(const struct ethhdr* ethhdr,
+                      const struct arp_fields* fields);
 
-int arp_target_mac_str(struct arp_fields* fields, char* str);
+void print_tap_dev(const struct tap_dev* dev);
 
-int arp_sender_ip_str(struct arp_fields* fields, char* str);
+bool mac_addrs_eq(const uint8_t* l, const uint8_t* r);
 
-int arp_target_ip_str(struct arp_fields* fields, char* str);
+bool ip_addrs_eq(const uint8_t* l, const uint8_t* r);
 
 #endif

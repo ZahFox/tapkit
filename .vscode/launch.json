@@ -10,14 +10,15 @@
             "request": "launch",
             "program": "${workspaceFolder}/tapkit",
             "args": [
-                "tail",
-                "vnet0"
+                "emulate",
+                "tap0",
+                "192.168.42.1"
             ],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
             "environment": [],
             "externalConsole": false,
-            "miDebuggerPath": "${workspaceFolder}/scripts/gdb",
+            // "miDebuggerPath": "${workspaceFolder}/scripts/gdb",
             "MIMode": "gdb",
             "setupCommands": [
                 {
