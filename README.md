@@ -36,6 +36,8 @@ Run `tapkit`:
 
 ## Create a Testing Environment
 
+To test `tapkit` we want a temporary Linux bridge and two TAP devices. Additionally, in an environment such a development container, `/dev/net/tun` most likely does not exist, so these instructions include commands to create this required character device.
+
 ```
 sudo mkdir -p /dev/net
 sudo mknod /dev/net/tun c 10 200
@@ -45,36 +47,44 @@ sudo ip link add br0 type bridge
 sudo ip tuntap add tap0 mode tap
 sudo ip link set dev tap0 up
 sudo ip link set tap0 master br0
-```
-
-## OVS Commands
-
-```
-sudo ovs-vsctl add-br br0
-sudo ip tuntap add mode tap vnet0
-sudo ip link set vnet0 up
-sudo ovs-vsctl add-port br0 vnet0
+sudo ip tuntap add tap1 mode tap
+sudo ip link set dev tap1 up
+sudo ip link set tap1 master br0
 ```
 
 ## Misc. Information
 
-Allow `tapkit` to receive raw network packets,
+Allow `tapkit` to send and receive raw network packets:
 
 ```
-sudo setcap cap_net_raw=ep tapkit
+sudo setcap cap_net_raw,cap_net_admin=ep tapkit
 ```
 
-### `CAP_NET_RAW`
-
-```
 https://linux.die.net/man/7/capabilities
 
+#### `CAP_NET_RAW`
+
+```
 CAP_NET_RAW
-    *
+    * Use RAW and PACKET sockets;
+    * bind to any address for transparent proxying.
+```
 
-    use RAW and PACKET sockets;
+#### `CAP_NET_ADMIN`
 
-    *
-
-    bind to any address for transparent proxying.
+```
+CAP_NET_ADMIN
+      Perform various network-related operations:
+      * interface configuration;
+      * administration of IP firewall, masquerading, and
+        accounting;
+      * modify routing tables;
+      * bind to any address for transparent proxying;
+      * set type-of-service (TOS);
+      * clear driver statistics;
+      * set promiscuous mode;
+      * enabling multicasting;
+      * use setsockopt(2) to set the following socket options:
+        SO_DEBUG, SO_MARK, SO_PRIORITY (for a priority outside
+        the range 0 to 6), SO_RCVBUFFORCE, and SO_SNDBUFFORCE.
 ```
