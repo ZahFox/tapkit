@@ -5,7 +5,8 @@
 #ifndef TESTING
 int main(int argc, char* argv[]) {
   if (argc < 2) {
-    fputs("tapkit: missing operand\nTry 'tapkit --help' for more information\n", stderr);
+    fputs("tapkit: missing operand\nTry 'tapkit --help' for more information\n",
+          stderr);
     return EXIT_FAILURE;
   }
 
@@ -44,9 +45,15 @@ int main(int argc, char* argv[]) {
     char* dev_name = argv[2];
     res = emulate_tap(dev_name, ip_addr);
   } else if (!strcmp(cmd, "--help")) {
-    fputs("Usage: tapkit COMMAND\n       tapkit --help\nwhere  COMMAND := { tail | knock | emulate }\n", stdout);
+    fputs(
+        "Usage: tapkit COMMAND\n       tapkit --help\nwhere  COMMAND := { tail "
+        "| knock | emulate }\n",
+        stdout);
   } else {
-    fprintf(stderr, "tapkit: invalid command: %s\nTry 'tapkit --help' for more information\n", cmd);
+    fprintf(stderr,
+            "tapkit: invalid command: %s\nTry 'tapkit --help' for more "
+            "information\n",
+            cmd);
     return EXIT_FAILURE;
   }
 

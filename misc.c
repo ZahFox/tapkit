@@ -71,8 +71,8 @@ error_exit:
 void got_icmp_packet(uint8_t* args, const struct pcap_pkthdr* header,
                      const uint8_t* packet) {
   const struct ethernet_hdrs* ethernet; /* The Ethernet header */
-  const struct ipv4_fields* ip;            /* The IP header */
-  const struct sniff_icmp* icmp;        /* The ICMP header */
+  const struct ipv4_fields* ip;         /* The IP header */
+  const struct icmp_fields* icmp;       /* The ICMP header */
   const char* payload;                  /* Packet payload */
   u_int size_ip;
 
@@ -84,7 +84,7 @@ void got_icmp_packet(uint8_t* args, const struct pcap_pkthdr* header,
     return;
   }
 
-  icmp = (struct sniff_icmp*)(packet + SIZE_ETHERNET + size_ip);
+  icmp = (struct icmp_fields*)(packet + SIZE_ETHERNET + size_ip);
   payload = (uint8_t*)(packet + SIZE_ETHERNET + size_ip + SIZE_ICMP);
 
   if (icmp->icmp_type == 8) { /* Echo Request */

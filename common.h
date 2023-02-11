@@ -5,13 +5,13 @@
 #include <ctype.h>
 #include <errno.h>
 #include <inttypes.h>
+#include <libnet.h>
 #include <linux/if_tun.h>
 #include <net/ethernet.h>
 #include <net/if.h>
 #include <net/if_packet.h>
 #include <netinet/ether.h>
 #include <pcap.h>
-#include <libnet.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stddef.h>

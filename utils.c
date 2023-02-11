@@ -1,8 +1,7 @@
 #include "utils.h"
 
 void print_arp_packet(const struct ethhdr* ethhdr,
-                      const struct arp_fields* fields)
-{
+                      const struct arp_fields* fields) {
   fprintf(stdout,
           "========================================\n"
           "ARP %s\n"
@@ -45,24 +44,25 @@ void print_tap_dev(const struct tap_dev* dev) {
 }
 
 bool mac_addrs_eq(const uint8_t* l, const uint8_t* r) {
-    return l[0] == r[0] && l[1] == r[1] && l[2] == r[2] && l[3] == r[3] && l[4] == r[4] && l[5] == r[5];
+  return l[0] == r[0] && l[1] == r[1] && l[2] == r[2] && l[3] == r[3] &&
+         l[4] == r[4] && l[5] == r[5];
 }
 
 bool ipv4_addrs_eq(const uint8_t* l, const uint8_t* r) {
-    return l[0] == r[0] && l[1] == r[1] && l[2] == r[2] && l[3] == r[3];
+  return l[0] == r[0] && l[1] == r[1] && l[2] == r[2] && l[3] == r[3];
 }
 
 /**
  * Convert an IPv4 address string into a uint8_t[4].
  */
 int ipv4_str_to_addr(char* ip_str, uint8_t* ip_addr) {
-    struct in_addr ip;
-    if (inet_pton(AF_INET, ip_str, &ip) == 0) {
-        return -1;
-    }
+  struct in_addr ip;
+  if (inet_pton(AF_INET, ip_str, &ip) == 0) {
+    return -1;
+  }
 
-    ipv4_naddr_to_addr(&ip, ip_addr);
-    return 0;
+  ipv4_naddr_to_addr(&ip, ip_addr);
+  return 0;
 }
 
 /**
