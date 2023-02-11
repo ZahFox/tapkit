@@ -48,6 +48,30 @@ bool mac_addrs_eq(const uint8_t* l, const uint8_t* r) {
     return l[0] == r[0] && l[1] == r[1] && l[2] == r[2] && l[3] == r[3] && l[4] == r[4] && l[5] == r[5];
 }
 
-bool ip_addrs_eq(const uint8_t* l, const uint8_t* r) {
+bool ipv4_addrs_eq(const uint8_t* l, const uint8_t* r) {
     return l[0] == r[0] && l[1] == r[1] && l[2] == r[2] && l[3] == r[3];
+}
+
+/**
+ * Convert an IPv4 address string into a uint8_t[4].
+ */
+int ipv4_str_to_addr(char* ip_str, uint8_t* ip_addr) {
+    struct in_addr ip;
+    if (inet_pton(AF_INET, ip_str, &ip) == 0) {
+        return -1;
+    }
+
+    ipv4_naddr_to_addr(&ip, ip_addr);
+    return 0;
+}
+
+/**
+ * Convert an network encoded IPv4 address into a uint8_t[4].
+ */
+void ipv4_naddr_to_addr(struct in_addr* ip_naddr, uint8_t* ip_addr) {
+  uint32_t emu_addr = (uint32_t)ip_naddr->s_addr;
+  ip_addr[0] = emu_addr & 0x000000ff;
+  ip_addr[1] = (emu_addr & 0x0000ff00) >> 8;
+  ip_addr[2] = (emu_addr & 0x00ff0000) >> 16;
+  ip_addr[3] = (emu_addr & 0xff000000) >> 24;
 }

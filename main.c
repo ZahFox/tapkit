@@ -1,5 +1,6 @@
 #include "cunittests.h"
 #include "tapkit.h"
+#include "utils.h"
 
 #ifndef TESTING
 int main(int argc, char* argv[]) {
@@ -18,30 +19,30 @@ int main(int argc, char* argv[]) {
       return EXIT_FAILURE;
     }
 
-    char* dev = argv[2];
-    res = tail_tap(dev);
+    char* dev_name = argv[2];
+    res = tail_tap(dev_name);
   } else if (!strcmp(cmd, "knock")) {
     if (argc < 3) {
       fprintf(stderr, "tapkit: error: specify a tap device to knock\n");
       return EXIT_FAILURE;
     }
 
-    char* dev = argv[2];
-    res = knock_tap(dev);
+    char* dev_name = argv[2];
+    res = knock_tap(dev_name);
   } else if (!strcmp(cmd, "emulate")) {
     if (argc < 4) {
       fprintf(stderr, "tapkit: error: specify a tap device and ip address\n");
       return EXIT_FAILURE;
     }
 
-    char* dev = argv[2];
-    struct in_addr ip;
-    if (inet_pton(AF_INET, argv[3], &ip) == 0) {
+    uint8_t ip_addr[4];
+    if (!ipv4_str_to_addr(argv[3], ip_addr)) {
       fprintf(stderr, "tapkit: error: invalid ip address\n");
       return EXIT_FAILURE;
     }
 
-    res = emulate_tap(dev, &ip);
+    char* dev_name = argv[2];
+    res = emulate_tap(dev_name, ip_addr);
   } else if (!strcmp(cmd, "--help")) {
     fputs("Usage: tapkit COMMAND\n       tapkit --help\nwhere  COMMAND := { tail | knock | emulate }\n", stdout);
   } else {

@@ -7,9 +7,9 @@
 NEW_CIRC_BUFFER(struct arp_entry, arp_buf, 256);
 
 void tail_tap_handler(void* arg);
+void emulate_tap_handler(void* arg);
 void print_eth_frame(const uint8_t* frame, const int len);
 
-void emulate_tap_handler(void* arg);
 void process_eth_frame(const struct tap_emulate_state* state, const uint8_t* frame, const int len);
 int send_arp_reply(const char* dev_name, const uint8_t* target_mac, uint8_t* target_ip, const uint8_t* sender_mac, const uint8_t* sender_ip);
 
@@ -49,7 +49,7 @@ int tail_tap(char* dev_name) {
   return 0;
 }
 
-int emulate_tap(char* dev_name, struct in_addr* ip) {
+int emulate_tap(char* dev_name, uint8_t* ip_addr) {
   struct tap_dev dev = {
       .is_up = false, .dev_name = dev_name, .mac_addr = {0, 0, 0, 0, 0, 0}
   };
@@ -61,7 +61,7 @@ int emulate_tap(char* dev_name, struct in_addr* ip) {
 
   struct tap_emulate_opts opts = {
       .dev = &dev,
-      .ip = ip,
+      .ip_addr = ip_addr,
       .func = &process_eth_frame
   };
 
@@ -84,17 +84,9 @@ void emulate_tap_handler(void* arg) {
     goto cleanup;
   }
 
-  // convert ip type to uint8_t array
-  uint8_t o1, o2, o3, o4;
-  uint32_t emu_addr = (uint32_t)opts->ip->s_addr;
-  o1 = emu_addr & 0x000000ff;
-  o2 = (emu_addr & 0x0000ff00) >> 8;
-  o3 = (emu_addr & 0x00ff0000) >> 16;
-  o4 = (emu_addr & 0xff000000) >> 24;
-
   const struct tap_emulate_state state = {
       .dev = opts->dev,
-      .ip_addr = {o1, o2, o3, o4},
+      .ip_addr = {opts->ip_addr[0], opts->ip_addr[1], opts->ip_addr[2], opts->ip_addr[3]},
   };
 
   // read ethernet frames from tap device
@@ -375,6 +367,7 @@ void process_eth_frame(const struct tap_emulate_state* state, const uint8_t* fra
 
       const struct arp_fields* fields =
           (struct arp_fields*)(frame + SIZE_ETHERNET);
+
       uint16_t ptype = ntohs(fields->ptype);
       if (ptype != IPV4_ETHER_TYPE) {
         fprintf(stderr, "unsupported arp protocol type: 0x%.04x\n", ptype);
@@ -384,7 +377,7 @@ void process_eth_frame(const struct tap_emulate_state* state, const uint8_t* fra
       bool is_request = ntohs(fields->oper) == 1;
       if (is_request) { // ARP Request
         // Ensure the target IP address is our IP address
-        if (!ip_addrs_eq(fields->tpa, state->ip_addr)) {
+        if (!ipv4_addrs_eq(fields->tpa, state->ip_addr)) {
             return;
         }
 
@@ -402,7 +395,7 @@ void process_eth_frame(const struct tap_emulate_state* state, const uint8_t* fra
         }
 
         // Ensure the target IP address is our IP address
-        if (!ip_addrs_eq(fields->tpa, state->ip_addr)) {
+        if (!ipv4_addrs_eq(fields->tpa, state->ip_addr)) {
             return;
         }
       }

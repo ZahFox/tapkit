@@ -19,7 +19,7 @@
 struct ethernet_hdrs {
   uint8_t ether_dhost[ETHER_ADDR_LEN]; /* Destination host address */
   uint8_t ether_shost[ETHER_ADDR_LEN]; /* Source host address */
-  u_short ether_type;                 /* IP? ARP? RARP? etc */
+  uint16_t ether_type;                 /* IP? ARP? RARP? etc */
 };
 
 int legacy_tail_tap2(char* dev_name) {
@@ -71,13 +71,13 @@ error_exit:
 void got_icmp_packet(uint8_t* args, const struct pcap_pkthdr* header,
                      const uint8_t* packet) {
   const struct ethernet_hdrs* ethernet; /* The Ethernet header */
-  const struct sniff_ip* ip;            /* The IP header */
+  const struct ipv4_fields* ip;            /* The IP header */
   const struct sniff_icmp* icmp;        /* The ICMP header */
   const char* payload;                  /* Packet payload */
   u_int size_ip;
 
   ethernet = (struct ethernet_hdrs*)(packet);
-  ip = (struct sniff_ip*)(packet + SIZE_ETHERNET);
+  ip = (struct ipv4_fields*)(packet + SIZE_ETHERNET);
   size_ip = IP_HL(ip) * 4;
   if (size_ip < 20) {
     fprintf(stderr, "invalid IP header length: %u bytes\n", size_ip);
